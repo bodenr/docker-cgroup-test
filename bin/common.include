@@ -1,0 +1,66 @@
+#!/bin/bash
+
+TEST_DIR=/root/docker-test
+IMAGE_DIR="$TEST_DIR"/images
+GREEN='\e[0;31m'
+WIPE="\033[1m\033[0m"
+
+
+function assert_docker() {
+	# check for docker daemon
+	pgrep docker > /dev/null || {
+		log "docker daemon is not running..."
+		exit 1
+	}
+}
+
+function assert_losetup() {
+	losetup	"$1" > /dev/null
+	if [ $? -eq 0 ]; then
+		log "loopback device $1 already in use"
+		exit 2
+	fi	
+}
+
+function build_image() {
+    log "Building docker image: $1..."
+    pushd "$IMAGE_DIR/$1"
+    TIME=$(time docker build -t "$1" . > /dev/null)
+    popd
+}
+
+function log() {
+   DATE=$(date)
+   echo -e "${GREEN}[${DATE}] ${1}${WIPE}"
+}
+
+function pause() {
+	read -p "Press any ENTER to $1: " response
+}
+
+function mem_watch() {
+	while true; do
+        if [ ! -f memory.usage_in_bytes ] || [ ! -f memory.stat ]; then
+            log "cgroup no longer exists"
+            break 
+        fi
+	    echo -n "Mem Usage (mb): "
+	    expr `cat memory.usage_in_bytes` / 1024 / 1024
+	    echo -n "Swap Usage (mb): "
+	    expr `cat memory.stat | grep -w swap | cut -f2 -d' '` / 1024 / 1024
+	    sleep 1
+	done
+}
+
+function cpu_watch() {
+	for i in `seq 1 31`;
+    do
+		if [ ! -f cpuset.cpus ]; then
+            log "cgroup no longer exists"
+            break
+        fi
+        TASKS=$(cat tasks | awk -vORS=, '{ print $1 }' | sed 's/,$/\n/')
+        ps -p $TASKS -L -o pid,tid,psr,pcpu,comm=
+    	sleep 1
+	done	
+}
